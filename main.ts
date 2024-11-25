@@ -5,6 +5,7 @@ More info regarding subworkers: https://techdocs.akamai.com/edgeworkers/docs/cre
 */
 import { httpRequest } from "http-request";
 import { createResponse } from "create-response";
+import { generateDigest } from "./generateDigest.js";
 import { logger } from "log";
 
 // some custom created library and CONSTs we need to import
@@ -32,30 +33,39 @@ interface KeyRequestBody {
 
 // as we need  some info from the request body, we have to use the responseProvider
 export async function responseProvider(request: EW.ResponseProviderRequest) {
-  // get the body of the request. We know the payload is not too large so we should be fine with the standard limits.
-  // this version only working with a JSON body.
-  // https://techdocs.akamai.com/edgeworkers/docs/resource-tier-limitations
-  let body = await request.json().catch(() => null);
+  // lets first check our content-type and data is a POST.
+  // we support application/x-www-form-urlencoded and application/json
+  let body: object = null;
+
+  // only get content-type if it exists and just convert to lowercase just to sure.
+  const contentType = request.getHeader("content-type")?.[0]?.toLowerCase();
+
+  // get body based on content-type. This is the buffered version so be aware of the limits
+  if (contentType === "application/json") {
+    body = await request.json().catch(() => null);
+  }
 
   // if key is found a unique key is created used to register on /positiveMatch endpoint
   let id: string = null;
+  let key: string = undefined;
 
   // for some calls to HarperDB we need basic auth header, get it from delivery config.
   const authHeader = request.getVariable("PMUSER_AUTH_HEADER") ?? null;
 
   // only start process if we have a body and the required fields.
   if (body && isValidBody(body)) {
-    // Looks like we have all the required fields, use it to create our request body var.
-    // request body specification is specific for our nomoreleaks endpoint.
-    var requestBody: KeyRequestBody = {
-      uname: getNestedValue(body, UNAME),
-      passwd: getNestedValue(body, PASSWD),
-    };
+    // Looks like we have all the required fields, lookup body fields and normalize
+    try {
+      const normalizedUnamePasswd =
+        getNestedValue(body, UNAME).toLowerCase().normalize("NFC") +
+        getNestedValue(body, PASSWD).normalize("NFC");
 
-    // now try to call our key generating endpoint, response will be valid key or null
-    // this function will respond with a Promise, let's wait for that.
-    // to get subWorker logs, use Pragma:akamai-x-ew-debug-rp,akamai-x-ew-subworkers,akamai-x-ew-debug-subs in request header
-    const key = (await getKeyFromKeyGenerator(requestBody)) || null;
+      // now generated digest
+      key = await generateDigest("SHA-256", normalizedUnamePasswd);
+      logger.info("SHA-256 hash created from username+password combination");
+    } catch (error) {
+      logger.error(`Something went wrong creating the SHA-256: ${error}`);
+    }
 
     // if we have received some response and auth defined, let's validate the key against our db.
     if (key && authHeader) {
@@ -94,38 +104,6 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
       `failed origin sub-request: ${originResponse.status}`
     );
   }
-}
-
-// chatGPT advised us to create a separate function to check our result
-async function getKeyFromKeyGenerator(
-  requestBody: KeyRequestBody
-): Promise<string | null> {
-  try {
-    const result = await httpRequest(KEY_GENERATOR_URL, {
-      method: "POST",
-      body: JSON.stringify(requestBody),
-    });
-
-    if (result.ok) {
-      const response = await result.json();
-
-      logger.info(
-        `Endpoint generated a key: ${response[KEY].substring(0, 5)}.....`
-      );
-
-      // let's return our generated key
-      return response[KEY];
-    } else {
-      logger.error(
-        `Request to ${KEY_GENERATOR_URL} failed with status: ${result.status}`
-      );
-    }
-  } catch (error) {
-    logger.error(`There was a problem calling ${KEY_GENERATOR_URL}: ${error}`);
-  }
-
-  // if anything goes wrong, just respond with null
-  return null;
 }
 
 // this endpoint is using HarperDB to lookup the key.
@@ -185,7 +163,7 @@ async function keyExists(key: string, auth?: string): Promise<string> {
 // this function will forward request to origin.
 async function originRequest(
   request: EW.ResponseProviderRequest,
-  body: Promise<string>,
+  body: object,
   id: string,
   informHeader: string = NO_MORE_LEAKS_HEADER
 ) {
