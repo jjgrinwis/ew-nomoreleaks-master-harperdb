@@ -45,9 +45,10 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
     body = await request.json().catch(() => null);
   }
 
+  // key is the digest of our username+password combination
+  let key: string = undefined;
   // if key is found a unique key is created used to register on /positiveMatch endpoint
   let id: string = null;
-  let key: string = undefined;
 
   // for some calls to HarperDB we need basic auth header, get it from delivery config.
   const authHeader = request.getVariable("PMUSER_AUTH_HEADER") ?? null;
@@ -62,8 +63,10 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
 
       // now generated digest
       key = await generateDigest("SHA-256", normalizedUnamePasswd);
-      logger.info("SHA-256 hash created from username+password combination");
+
+      //logger.info("SHA-256 hash created from username+password combination");
     } catch (error) {
+      // in case anything goes wrong, just log it but forward request to origin.
       logger.error(`Something went wrong creating the SHA-256: ${error}`);
     }
 
@@ -72,7 +75,7 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
       // to get subWorker logs, use Pragma:akamai-x-ew-debug-rp,akamai-x-ew-subworkers,akamai-x-ew-debug-subs in request header
       id = await keyExists(key, authHeader);
     } else {
-      logger.error(`key not defined ${key}`);
+      logger.error(`key or autheader not defined ${key}`);
     }
   } else {
     logger.error(`${UNAME} and/or ${PASSWD} not provided in json body`);
