@@ -14,22 +14,13 @@ import { isValidBody, getNestedValue } from "./utils.js";
 import {
   UNAME,
   PASSWD,
-  KEY_GENERATOR_URL,
   KNOWN_KEY_URL,
   NO_MORE_LEAKS_HEADER,
   POSITIVE_MATCH_URL,
 } from "./constants.js";
 
 // the field in JSON response that has the generated hash
-const KEY = "key";
 const X_HASH_KEY = "X-Hash-Value";
-
-// define the body we're going to send to our key generator endpoint
-// based on on the key request endpoint this can be changed.
-interface KeyRequestBody {
-  uname: string;
-  passwd: string;
-}
 
 // as we need  some info from the request body, we have to use the responseProvider
 export async function responseProvider(request: EW.ResponseProviderRequest) {
@@ -47,7 +38,7 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
 
   // key is the digest of our username+password combination
   let key: string = undefined;
-  // if key is found a unique key is created used to register on /positiveMatch endpoint
+  // if key is found a unique id is created used to register on /positiveMatch endpoint
   let id: string = null;
 
   // for some calls to HarperDB we need basic auth header, get it from delivery config.

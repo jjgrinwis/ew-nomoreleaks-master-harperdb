@@ -8,9 +8,7 @@ If you want to test with httpie: http POST https://api.grinwis.com/login user:='
 export const UNAME = "username";
 export const PASSWD = "password";
 
-// our key generating and know password lookup subWorker endpoints
-export const KEY_GENERATOR_URL =
-  "https://nomoreleaks.grinwis.com/nomoreleakskey";
+// some subworker endpoints
 export const KNOWN_KEY_URL = "https://nomoreleaks.grinwis.com/ew-knownkey";
 export const POSITIVE_MATCH_URL =
   "https://nomoreleaks.grinwis.com/positiveMatch"; // case sensitive endpoint
