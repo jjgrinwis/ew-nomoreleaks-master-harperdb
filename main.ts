@@ -29,10 +29,11 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
   // we support application/x-www-form-urlencoded and application/json
   let body: object = null;
 
-  // only get content-type if it exists and just convert to lowercase just to sure.
+  // only get content-type if it exists and just convert to lowercase just to be sure.
   const contentType = request.getHeader("content-type")?.[0]?.toLowerCase();
 
   // based on the content type we're going to use the JSON body or convert x-www-form-urlencoded to a json object
+  // be aware of the json() and text() memory limits in EdgeWorkers as this is buffered, not streamed!
   try {
     if (contentType.toLowerCase().startsWith("application/json")) {
       body = await request.json();
@@ -43,6 +44,8 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
 
       // create a URLSearchParams object from our form-urlencoded body
       const params = new URLSearchParams(formBody);
+
+      // set our body object with values from formbody with keys defined in UNAME and PASSWD
       body = mapCredentials(params);
     }
   } catch (error) {
@@ -54,6 +57,7 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
 
   // key is the digest of our username+password combination
   let key: string = undefined;
+
   // if key is found a unique id is created used to register on /positiveMatch endpoint
   let id: string = null;
 
@@ -68,7 +72,7 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
         getNestedValue(body, UNAME).toLowerCase().normalize("NFC") +
         getNestedValue(body, PASSWD).normalize("NFC");
 
-      // now generated digest
+      // generate SHA-256 digest of normalized username/password
       key = await generateDigest("SHA-256", normalizedUnamePasswd);
 
       //logger.info("SHA-256 hash created from username+password combination");
@@ -99,7 +103,7 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
     registerPositiveMatch(reqBody, authHeader);
   }
 
-  // time respond d ot the client.
+  // time to respond to the client.
   if (originResponse) {
     return Promise.resolve(
       createResponse(
