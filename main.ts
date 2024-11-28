@@ -6,6 +6,7 @@ More info regarding subworkers: https://techdocs.akamai.com/edgeworkers/docs/cre
 import { httpRequest } from "http-request";
 import { createResponse } from "create-response";
 import { generateDigest } from "./generateDigest.js";
+import URLSearchParams from "url-search-params";
 import { logger } from "log";
 
 // some custom created library and CONSTs we need to import
@@ -31,9 +32,24 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
   // only get content-type if it exists and just convert to lowercase just to sure.
   const contentType = request.getHeader("content-type")?.[0]?.toLowerCase();
 
-  // get body based on content-type. This is the buffered version so be aware of the limits
-  if (contentType === "application/json") {
-    body = await request.json().catch(() => null);
+  // based on the content type we're going to use the JSON body or convert x-www-form-urlencoded to a json object
+  try {
+    if (contentType.toLowerCase().startsWith("application/json")) {
+      body = await request.json();
+    } else if (
+      contentType.toLowerCase().startsWith("application/x-www-form-urlencoded")
+    ) {
+      const formBody = await request.text();
+
+      // create a URLSearchParams object from our form-urlencoded body
+      const params = new URLSearchParams(formBody);
+      body = mapCredentials(params);
+    }
+  } catch (error) {
+    logger.error(
+      `Failed to parse request body with Content-Type: ${contentType}`,
+      error
+    );
   }
 
   // key is the digest of our username+password combination
@@ -227,4 +243,11 @@ function registerPositiveMatch(reqBody: object, auth?: string) {
   } catch (error) {
     logger.error(`There was a problem calling ${POSITIVE_MATCH_URL}: ${error}`);
   }
+}
+
+function mapCredentials(params: URLSearchParams): { [key: string]: string } {
+  return {
+    [UNAME]: params.get(UNAME) || "",
+    [PASSWD]: params.get(PASSWD) || "",
+  };
 }
