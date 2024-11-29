@@ -20,19 +20,20 @@ import {
   POSITIVE_MATCH_URL,
 } from "./constants.js";
 
-// the field in JSON response that has the generated hash
+// the field in JSON response from HarperDB that has the generated hash
 const X_HASH_KEY = "X-Hash-Value";
 
 // as we need  some info from the request body, we have to use the responseProvider
 export async function responseProvider(request: EW.ResponseProviderRequest) {
-  // lets first check our content-type and data is a POST.
+  // lets first check our content-type
   // we support application/x-www-form-urlencoded and application/json
-  let body: object = null;
-
   // only get content-type if it exists and just convert to lowercase just to be sure.
   const contentType = request.getHeader("content-type")?.[0]?.toLowerCase();
 
-  // based on the content type we're going to use the JSON body or convert x-www-form-urlencoded to a json object
+  // our body that holds UNAME and PASSWD key and value
+  let body: object = null;
+
+  // based on the content type, we're going to use the JSON body or convert x-www-form-urlencoded data to a JSON object
   // be aware of the json() and text() memory limits in EdgeWorkers as this is buffered, not streamed!
   try {
     if (contentType.toLowerCase().startsWith("application/json")) {
@@ -45,10 +46,11 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
       // create a URLSearchParams object from our form-urlencoded body
       const params = new URLSearchParams(formBody);
 
-      // set our body object with values from formbody with keys defined in UNAME and PASSWD
+      // set our body object with values fromBody with keys defined in UNAME and PASSWD
       body = mapCredentials(params);
     }
   } catch (error) {
+    // if anything goes wrong, just log an error but continue process.
     logger.error(
       `Failed to parse request body with Content-Type: ${contentType}`,
       error
@@ -66,13 +68,13 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
 
   // only start process if we have a body and the required fields.
   if (body && isValidBody(body)) {
-    // Looks like we have all the required fields, lookup body fields and normalize
+    // Looks like we have all the required fields, lookup body fields and normalize using NFC
     try {
       const normalizedUnamePasswd =
         getNestedValue(body, UNAME).toLowerCase().normalize("NFC") +
         getNestedValue(body, PASSWD).normalize("NFC");
 
-      // generate SHA-256 digest of normalized username/password
+      // generate SHA-256 digest of normalized username+password string
       key = await generateDigest("SHA-256", normalizedUnamePasswd);
 
       //logger.info("SHA-256 hash created from username+password combination");
@@ -96,6 +98,7 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
   const originResponse = await originRequest(request, body, id);
 
   // a successful login using a known username/password now just defined as a 200.
+  // we might need to use other options like some header or different response code.
   if (id && originResponse.ok) {
     // no need to wait for it, just fire it off to our delivery config that's in front of harperDB
     // using a post body like {"id": "86cdca52-a34e-4899-8c12-fd370b9b5c56"m "group": "something"}
