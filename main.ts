@@ -30,8 +30,11 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
   // only get content-type if it exists and just convert to lowercase just to be sure.
   const contentType = request.getHeader("content-type")?.[0]?.toLowerCase();
 
-  // our body that holds UNAME and PASSWD key and value
+  // our body that only holds UNAME and PASSWD key and value. It will also be used for our text form data
   let body: object = null;
+
+  // our original form body
+  let formBody: string = null;
 
   // based on the content type, we're going to use the JSON body or convert x-www-form-urlencoded data to a JSON object
   // be aware of the json() and text() memory limits in EdgeWorkers as this is buffered, not streamed!
@@ -41,7 +44,7 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
     } else if (
       contentType.toLowerCase().startsWith("application/x-www-form-urlencoded")
     ) {
-      const formBody = await request.text();
+      formBody = await request.text();
 
       // create a URLSearchParams object from our form-urlencoded body
       const params = new URLSearchParams(formBody);
@@ -95,7 +98,9 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
   }
   // for now just forwarding request to the origin.
   // not using a try, if call fails, it fails, just forwarding the response to the user.
-  const originResponse = await originRequest(request, body, id);
+  // if it's from data, use formBody, else just use origin json body and fire off the request
+  const reqBody = formBody || JSON.stringify(body);
+  const originResponse = await originRequest(request, reqBody, id);
 
   // a successful login using a known username/password now just defined as a 200.
   // we might need to use other options like some header or different response code.
@@ -177,10 +182,10 @@ async function keyExists(key: string, auth?: string): Promise<string> {
   return null;
 }
 
-// this function will forward request to origin.
+// this function will forward request to origin. As a body you can use json object or text for form data
 async function originRequest(
   request: EW.ResponseProviderRequest,
-  body: object,
+  body: string,
   id: string,
   informHeader: string = NO_MORE_LEAKS_HEADER
 ) {
@@ -212,13 +217,13 @@ async function originRequest(
   // add fraudster state header. If null convert to string null otherwise string true
   requestHeaders[informHeader] = [String(id ? true : false)];
 
-  // fire off the request to our statically defined origin for now
-  // this should be changed to request.url
-  const url = "https://api.grinwis.com/headers";
-  let originResponse = await httpRequest(url, {
+  // fire off the request to our statically defined origin using original body data and modified request headers.
+  // we can't use request.body as the request stream is already locked, so we need to feed the text into httpRequest call which has some limitations
+  // In a next version we might want to tee() the stream so we can just use the request.body in the httpRequest() call.
+  let originResponse = await httpRequest(request.url, {
     method: request.method,
     headers: requestHeaders,
-    body: JSON.stringify(body),
+    body: body,
   });
 
   // return our promise, good or bad.
