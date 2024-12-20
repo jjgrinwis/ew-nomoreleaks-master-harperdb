@@ -1,7 +1,12 @@
 /*
 (c) Copyright 2024 Akamai Technologies, Inc. Licensed under Apache 2 license.
-Purpose: Our Master Edgworker calling different subWorkers to validate hash of username/password against a database
-More info regarding subworkers: https://techdocs.akamai.com/edgeworkers/docs/create-a-subworker
+Purpose: Our Master EdgeWorker calling different subWorkers to validate hash of username/password against a database
+More info regarding subWorkers: https://techdocs.akamai.com/edgeworkers/docs/create-a-subworker
+
+Make sure to set the PMUSER_AUTH_HEADER variable in your delivery configuration calling this EdgeWorker
+That var is the basic auth info for HarperDB and should look like this: 'Basic bm1sX......s=' 
+
+You only need to change parameters in the constants.js
 */
 import { httpRequest } from "http-request";
 import { createResponse } from "create-response";
@@ -38,26 +43,29 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
 
   // based on the content type, we're going to use the JSON body or convert x-www-form-urlencoded data to a JSON object
   // be aware of the json() and text() memory limits in EdgeWorkers as this is buffered, not streamed!
-  try {
-    if (contentType.toLowerCase().startsWith("application/json")) {
-      body = await request.json();
-    } else if (
-      contentType.toLowerCase().startsWith("application/x-www-form-urlencoded")
-    ) {
-      formBody = await request.text();
+  // we only need to start the try block if contentType has some value and no need for toLowerCase() as we have done that before for var contentType
+  if (contentType !== undefined) {
+    try {
+      if (contentType.startsWith("application/json")) {
+        body = await request.json();
+      } else if (contentType.startsWith("application/x-www-form-urlencoded")) {
+        formBody = await request.text();
 
-      // create a URLSearchParams object from our form-urlencoded body
-      const params = new URLSearchParams(formBody);
+        // create a URLSearchParams object from our form-urlencoded body
+        const params = new URLSearchParams(formBody);
 
-      // set our body object with values fromBody with keys defined in UNAME and PASSWD
-      body = mapCredentials(params);
+        // set our body object with values fromBody with keys defined in UNAME and PASSWD
+        body = mapCredentials(params);
+      }
+    } catch (error) {
+      // if anything goes wrong, just log an error but continue process.
+      logger.error(
+        `Failed to parse request body with Content-Type: ${contentType}`,
+        error
+      );
     }
-  } catch (error) {
-    // if anything goes wrong, just log an error but continue process.
-    logger.error(
-      `Failed to parse request body with Content-Type: ${contentType}`,
-      error
-    );
+  } else {
+    logger.error("Content-Type is undefined, skipped the try block.");
   }
 
   // key is the digest of our username+password combination
@@ -67,7 +75,9 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
   let id: string = null;
 
   // for some calls to HarperDB we need basic auth header, get it from delivery config.
-  const authHeader = request.getVariable("PMUSER_AUTH_HEADER") ?? null;
+  // const authHeader = request.getVariable("PMUSER_AUTH_HEADER") || null;
+  // using || as value might be empty so check for any falsy value
+  const authHeader = request.getVariable("PMUSER_AUTH_HEADER") || null;
 
   // only start process if we have a body and the required fields.
   if (body && isValidBody(body)) {
@@ -91,10 +101,14 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
       // to get subWorker logs, use Pragma:akamai-x-ew-debug-rp,akamai-x-ew-subworkers,akamai-x-ew-debug-subs in request header
       id = await keyExists(key, authHeader);
     } else {
-      logger.error(`key or autheader not defined ${key}`);
+      logger.error(
+        `key or autHeader not defined key: ${key}, authHeader: ${authHeader}`
+      );
     }
   } else {
-    logger.error(`${UNAME} and/or ${PASSWD} not provided in json body`);
+    logger.error(
+      `${UNAME} and/or ${PASSWD} fields not provided in request body`
+    );
   }
   // for now just forwarding request to the origin.
   // not using a try, if call fails, it fails, just forwarding the response to the user.
@@ -112,11 +126,12 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
   }
 
   // time to respond to the client.
+  // we had some issues and looks like we also need to remove unsafe headers when providing the response object.
   if (originResponse) {
     return Promise.resolve(
       createResponse(
         originResponse.status,
-        originResponse.getHeaders(),
+        removeUnsafeHeaders(originResponse.getHeaders()),
         originResponse.body
       )
     );
@@ -173,6 +188,8 @@ async function keyExists(key: string, auth?: string): Promise<string> {
           "id field not in json response so key not found or wrong format"
         );
       }
+    } else {
+      logger.error(`${JSON.stringify(result.body)}`);
     }
   } catch (error) {
     logger.error(`There was a problem calling ${KNOWN_KEY_URL}: ${error}`);
@@ -189,30 +206,12 @@ async function originRequest(
   id: string,
   informHeader: string = NO_MORE_LEAKS_HEADER
 ) {
-  /*
-  some 'unsafe' headers we need to remove. httpRequest to the origin will fail if they are not removed
-  https://techdocs.akamai.com/edgeworkers/docs/http-request#http-sub-requests
-  https://techdocs.akamai.com/edgeworkers/docs/edgeworkers-javascript-code#can-i-re-use-request-and-response-headers
-  */
-  const HEADERS_TO_REMOVE = [
-    "host",
-    "content-length",
-    "transfer-encoding",
-    "connection",
-    "vary",
-    "accept-encoding",
-    "content-encoding",
-    "keep-alive",
-    "Proxy-Authenticate",
-    "proxy-authorization",
-    "te",
-    "trailers",
-    "upgrade",
-  ];
+  // first cleanup our request headers using our removeUnsafeHeaders option.
+  let requestHeaders = removeUnsafeHeaders(request.getHeaders());
 
-  // first cleanup our request headers
-  let requestHeaders = request.getHeaders();
-  HEADERS_TO_REMOVE.forEach((element) => delete requestHeaders[element]);
+  // lets add some special EW bypass header.
+  // but this only need to be verified if 'enable-subworker' has been enabled in your EdgeWorker bundle.json
+  requestHeaders["ew-bypass"] = [String(true)];
 
   // add fraudster state header. If null convert to string null otherwise string true
   requestHeaders[informHeader] = [String(id ? true : false)];
@@ -220,13 +219,13 @@ async function originRequest(
   // fire off the request to our statically defined origin using original body data and modified request headers.
   // we can't use request.body as the request stream is already locked, so we need to feed the text into httpRequest call which has some limitations
   // In a next version we might want to tee() the stream so we can just use the request.body in the httpRequest() call.
+  // request.url
   let originResponse = await httpRequest(request.url, {
     method: request.method,
     headers: requestHeaders,
     body: body,
   });
 
-  // return our promise, good or bad.
   return originResponse;
 }
 
@@ -262,4 +261,37 @@ function mapCredentials(params: URLSearchParams): { [key: string]: string } {
     [UNAME]: params.get(UNAME) || "",
     [PASSWD]: params.get(PASSWD) || "",
   };
+}
+
+function removeUnsafeHeaders(headers: EW.Headers): EW.Headers {
+  /*
+  Some 'unsafe' headers we need to remove. Not only request but also response headers should be cleaned up!
+  You will see some strange behavior if you don't remove them.
+  https://techdocs.akamai.com/edgeworkers/docs/http-request#http-sub-requests
+  https://techdocs.akamai.com/edgeworkers/docs/edgeworkers-javascript-code#can-i-re-use-request-and-response-headers
+  */
+  const HEADERS_TO_REMOVE = [
+    "host",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "vary",
+    "accept-encoding",
+    "content-encoding",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "upgrade",
+  ];
+
+  // only try to delete if headers exists and is an object
+  if (headers && typeof headers === "object") {
+    // in case entry doesn't exist, delete will just return true and lower case our header, just in case there is typo.
+    HEADERS_TO_REMOVE.forEach((header) => delete headers[header.toLowerCase()]);
+  }
+
+  // return EW.Headers without the 'unsafe' elements.
+  return headers;
 }
