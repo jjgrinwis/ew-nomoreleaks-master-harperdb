@@ -1,16 +1,16 @@
 {
   "name": "ew-nomoreleaks-master-harperdb",
-  "version": "0.0.23",
+  "version": "0.0.47",
   "description": "Master EdgeWorker to validate username/password against HarperDB",
   "main": "main.ts",
   "config": {
-    "ewid": "5920",
+    "ewid": "90808",
     "edgerc_section": "gss",
     "description": "Master EdgeWorker to validate username/password against HarperDB",
     "ew_name": "ew-nomoreleaks-master-harperdb",
     "tier": "200",
-    "ew_group_id": "93068",
-    "switchkey": "B-M-1YX7F48:1-8BYUX"
+    "ew_group_id": "48668",
+    "switchkey": "B-3-16OEUPX:1-2RBL"
   },
   "scripts": {
     "build": "npm run build-ts",
@@ -18,7 +18,7 @@
     "build-bundle-json": "cd built && echo '{\"edgeworker-version\":\"'$npm_package_version'\",\"description\":\"'$npm_package_config_description'\" }' > bundle.json && npm run build-ew-tgz",
     "build-ew-tgz": "cd built && tar czvf ../dist/'ew_'$npm_package_config_ewid'_'$npm_package_version'.tgz' * && npm run activate-edgeworker",
     "upload-edgeworker": "akamai edgeworkers --section $npm_package_config_edgerc_section --accountkey $npm_package_config_switchkey upload $npm_package_config_ewid --bundle dist/'ew_'$npm_package_config_ewid'_'$npm_package_version'.tgz'",
-    "activate-edgeworker": "npm run upload-edgeworker && akamai edgeworkers --section $npm_package_config_edgerc_section  --accountkey $npm_package_config_switchkey activate $npm_package_config_ewid production $npm_package_version",
+    "activate-edgeworker": "npm run upload-edgeworker && akamai edgeworkers --section $npm_package_config_edgerc_section  --accountkey $npm_package_config_switchkey activate $npm_package_config_ewid staging $npm_package_version",
     "activate-edgeworker-prod": "akamai edgeworkers --section $npm_package_config_edgerc_section  --accountkey $npm_package_config_switchkey activate $npm_package_config_ewid production $npm_package_version",
     "generate-token": "akamai edgeworkers --section $npm_package_config_edgerc_section  --accountkey $npm_package_config_switchkey auth --expiry 600 $npm_package_config_hostname",
     "list-groups": "akamai edgeworkers lg --section $npm_package_config_edgerc_section --accountkey $npm_package_config_switchkey",

@@ -5,8 +5,8 @@ If you want to test with httpie: http POST https://api.grinwis.com/login user:='
 */
 
 // define the json/form fields where username and password can be found.
-export const UNAME = "email";
-export const PASSWD = "pass";
+export const UNAME = "username";
+export const PASSWD = "password";
 
 // some subWorker endpoints
 export const KNOWN_KEY_URL = "https://nomoreleaks-prod.grinwis.com/ew-knownkey";

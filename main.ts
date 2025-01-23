@@ -126,7 +126,8 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
   }
 
   // time to respond to the client.
-  // we had some issues and looks like we also need to remove unsafe headers when providing the response object.
+  // we had some issues and looks like we also need to remove unsafe headers when providing the response.
+
   if (originResponse) {
     return Promise.resolve(
       createResponse(
