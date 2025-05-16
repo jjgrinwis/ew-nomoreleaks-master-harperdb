@@ -90,6 +90,8 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
       // generate SHA-256 digest of normalized username+password string
       key = await generateDigest("SHA-256", normalizedUnamePasswd);
 
+      logger.log(`generated hash: ${key.substring(0, 5)}.....`);
+
       //logger.info("SHA-256 hash created from username+password combination");
     } catch (error) {
       // in case anything goes wrong, just log it but forward request to origin.
@@ -170,15 +172,29 @@ async function keyExists(key: string, auth?: string): Promise<string> {
 
     if (result.ok) {
       const response = await result.json();
-      // make sure field exists and it's value is a UUID v4 with 36 chars.
-      // if not, just return a null
+      /* a response should look like this:
+      {
+        "id": {
+          "timestamp": 1747393156429,
+          "positiveMatch": false,
+          "id": "2415aa96-ef6d-4ee6-bf1f-d69072d52b02"
+        }
+      }
+
+      Harper team made a small change to the response format, so we need to check if the id field is in the response.
+      It's now id.id, don't really like so we might ask them to change it again.
+      */
+
       if (
+        response &&
+        typeof response === "object" &&
         response.hasOwnProperty("id") &&
-        response["id"] !== null &&
-        response["id"].length === 36
+        response.id !== null &&
+        typeof response.id.id === "string" &&
+        response.id.id.length === 36
       ) {
         logger.info(
-          `Call to ${KNOWN_KEY_URL} found id ${response["id"].substring(
+          `Call to ${KNOWN_KEY_URL} found id ${response.id.id.substring(
             0,
             5
           )}.....`

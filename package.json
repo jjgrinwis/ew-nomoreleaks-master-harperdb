@@ -1,6 +1,6 @@
 {
   "name": "ew-nomoreleaks-master-harperdb",
-  "version": "0.0.47",
+  "version": "0.0.57",
   "description": "Master EdgeWorker to validate username/password against HarperDB",
   "main": "main.ts",
   "config": {
