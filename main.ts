@@ -112,7 +112,7 @@ export async function responseProvider(request: EW.ResponseProviderRequest) {
   }
   // for now just forwarding request to the origin.
   // not using a try, if call fails, it fails, just forwarding the response to the user.
-  // if it's from data, use formBody, else just use origin json body and fire off the request
+  // if it's form data, use formBody, else just use origin json body and fire off the request
   const reqBody = formBody || JSON.stringify(body);
   const originResponse = await originRequest(request, reqBody, id);
 

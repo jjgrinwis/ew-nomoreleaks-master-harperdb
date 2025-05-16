@@ -9,9 +9,9 @@ export const UNAME = "username";
 export const PASSWD = "password";
 
 // some subWorker endpoints
-export const KNOWN_KEY_URL = "https://nomoreleaks-prod.grinwis.com/ew-knownkey";
+export const KNOWN_KEY_URL = "https://nomoreleaks.grinwis.com/ew-knownkey";
 export const POSITIVE_MATCH_URL =
-  "https://nomoreleaks-prod.grinwis.com/positiveMatch"; // case sensitive endpoint
+  "https://nomoreleaks.grinwis.com/positiveMatch"; // case sensitive endpoint
 
 // header that's going to be forwarded to the origin
 export const NO_MORE_LEAKS_HEADER = "x-nomoreleaks";
